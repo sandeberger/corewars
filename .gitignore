@@ -1,0 +1,15 @@
+# IDE / editor
+.claude/
+.playwright-mcp/
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Debug artifacts
+*.stackdump
+*.png
+
+# Node
+node_modules/

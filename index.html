@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CoreWar Arena — ICWS-94</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+<header>
+    <div class="logo">
+        <div class="logo-icon"><i class="fas fa-microchip"></i></div>
+        <span>CoreWar</span>
+        <span class="badge" style="font-size:9px;opacity:0.6;">ICWS-94</span>
+    </div>
+    <div class="header-controls">
+        <div class="badge" id="modeIndicator">SIMULATOR</div>
+        <button class="btn btn-sm" id="modeBtn" onclick="toggleMode()"><i class="fas fa-trophy"></i> Tournament</button>
+        <button class="btn btn-sm" onclick="showHelp()"><i class="fas fa-question-circle"></i> Help</button>
+    </div>
+</header>
+
+<div class="main">
+    <div class="panel" id="panelEditor">
+        <div class="tabs">
+            <div class="tab active" data-tab="editorPane">Editor</div>
+            <div class="tab" data-tab="libraryPane">Library</div>
+            <div class="tab" data-tab="refPane">Reference</div>
+            <div class="tab" data-tab="analyticsPane">Analytics</div>
+        </div>
+        <div id="editorPane" class="tab-pane active">
+            <div class="editor-wrap"><div class="editor-container"><pre id="editorHighlight" aria-hidden="true"><code></code></pre><textarea id="editor" spellcheck="false" placeholder="; Write your Redcode warrior here&#10;ORG start&#10;start: ADD.AB #4, 3&#10;       MOV.I  2, @2&#10;       JMP    start&#10;       DAT    #0, #0"></textarea></div></div>
+            <div class="editor-status"><span id="editorInfo">Ready</span><span><kbd class="kbd">Ctrl+Enter</kbd> Run</span></div>
+            <div class="btn-group" style="margin-top:4px;">
+                <button class="btn btn-primary" id="loadToSimBtn" style="flex:1;"><i class="fas fa-bolt"></i> Load &amp; Run</button>
+                <button class="btn" id="addToTournamentBtn" style="flex:1;display:none;"><i class="fas fa-plus"></i> Add to Tournament</button>
+                <button class="btn btn-sm" onclick="parseOnly()" title="Validate"><i class="fas fa-check"></i></button>
+            </div>
+        </div>
+        <div id="libraryPane" class="tab-pane">
+            <div class="library-search-wrap">
+                <i class="fas fa-search library-search-icon"></i>
+                <input type="text" id="librarySearch" placeholder="Search warriors..." class="library-search">
+                <span id="libSearchClear" class="library-search-clear" style="display:none;"><i class="fas fa-times"></i></span>
+            </div>
+            <div id="libraryFeatured">
+                <div class="section-label" style="cursor:pointer;" id="featuredToggle"><i class="fas fa-star" style="color:var(--accent-solar);"></i> Featured <i class="fas fa-chevron-down featured-chevron" id="featuredChevron"></i></div>
+                <div id="featuredRow" class="featured-row"></div>
+            </div>
+            <div class="section-label">Categories</div>
+            <div id="categoryChips" class="category-chips"></div>
+            <div class="library-list-header">
+                <span class="lib-count" id="libraryCount">566 warriors</span>
+                <select id="librarySort" class="library-sort"><option value="name">A-Z</option><option value="author">Author</option><option value="lines">Size</option></select>
+            </div>
+            <div class="library-list" id="libraryGrid"></div>
+        </div>
+        <div id="refPane" class="tab-pane">
+            <div class="section-label">Opcodes</div><div class="ref-grid" id="refGrid"></div>
+            <div class="section-label" style="margin-top:10px;">Addressing Modes</div><div class="ref-grid" id="addrRefGrid"></div>
+            <div class="section-label" style="margin-top:10px;">Modifiers</div><div class="ref-grid" id="modRefGrid"></div>
+        </div>
+        <div id="analyticsPane" class="tab-pane">
+            <div class="analytics-subtabs">
+                <div class="analytics-subtab active" data-subtab="battleTab">Battle</div>
+                <div class="analytics-subtab" data-subtab="tournamentTab">Tournament</div>
+                <div class="analytics-subtab" data-subtab="strategyTab">Strategy</div>
+            </div>
+            <div id="battleTab" class="analytics-subpane active">
+                <div class="analytics-chart-wrap"><canvas id="heatmapCanvas"></canvas></div>
+                <div class="analytics-chart-wrap"><canvas id="territoryCanvas"></canvas></div>
+                <div class="analytics-chart-wrap"><canvas id="processCanvas"></canvas></div>
+                <div class="analytics-chart-wrap"><canvas id="writeRateCanvas"></canvas></div>
+            </div>
+            <div id="tournamentTab" class="analytics-subpane">
+                <div class="section-label">Elo Rankings</div>
+                <div id="eloRankings"></div>
+                <div class="section-label" style="margin-top:8px;">Head-to-Head</div>
+                <div id="h2hResults"></div>
+                <div class="section-label" style="margin-top:8px;">Strategy Matchups</div>
+                <div class="analytics-chart-wrap"><canvas id="matchupCanvas"></canvas></div>
+                <div id="totalMatches" class="analytics-meta"></div>
+                <button class="btn btn-sm btn-danger" onclick="analyticsDashboard.tournamentStats.reset();analyticsDashboard.renderTournamentTab();" style="margin-top:6px;">Reset Stats</button>
+            </div>
+            <div id="strategyTab" class="analytics-subpane">
+                <div id="strategyContent"></div>
+                <div class="analytics-chart-wrap"><canvas id="radarCanvas"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel" id="panelCore" style="border-right:1px solid var(--border);">
+        <div class="panel-header">
+            <span>Core Memory</span>
+            <div class="btn-group">
+                <button class="btn btn-sm btn-icon" id="soundBtn" onclick="toggleSound()" title="Toggle Sound (M)" style="font-size:10px;min-width:28px;"><i class="fas fa-volume-mute"></i></button>
+                <button class="btn btn-sm btn-icon" id="debugToggleBtn" onclick="debuggerUI.toggle()" title="Toggle Debugger (D)" style="font-size:10px;min-width:28px;"><i class="fas fa-bug"></i></button>
+                <button class="btn btn-sm btn-icon" id="vizModeBtn" onclick="toggleVizMode()" title="Toggle Performance Mode (V)" style="font-size:10px;min-width:28px;"><i class="fas fa-bolt"></i></button>
+                <button class="btn btn-sm btn-icon" onclick="visualizer.zoom(1.15)" title="Zoom In"><i class="fas fa-plus"></i></button>
+                <button class="btn btn-sm btn-icon" onclick="visualizer.zoom(0.87)" title="Zoom Out"><i class="fas fa-minus"></i></button>
+                <button class="btn btn-sm btn-icon" onclick="visualizer.resetView()" title="Reset"><i class="fas fa-expand"></i></button>
+            </div>
+        </div>
+        <div id="coreContainer">
+            <div class="viz-mode-label" id="vizModeLabel">⚡ FAST MODE</div>
+            <canvas id="coreCanvas"></canvas>
+            <canvas id="effectCanvas"></canvas>
+            <div class="core-hud">
+                <div class="hud-item"><i class="fas fa-clock" style="color:var(--accent-cyber)"></i> Cycle <span class="hud-value" id="cycleCount">0</span></div>
+                <div class="hud-item"><i class="fas fa-memory" style="color:var(--accent-neon)"></i> Size <span class="hud-value" id="coreSizeDisplay">8000</span></div>
+            </div>
+            <div id="gameOverOverlay">
+                <div class="overlay-title">BATTLE OVER</div>
+                <div class="overlay-result" id="winnerName"></div>
+                <div class="overlay-actions">
+                    <button class="btn btn-primary" id="restartBtn" onclick="restartSingleGame()"><i class="fas fa-redo"></i> Restart</button>
+                    <button class="btn btn-primary" id="nextRoundBtn" onclick="tournamentManager.nextRound()" style="display:none;"><i class="fas fa-forward"></i> Next Round</button>
+                    <button class="btn" onclick="closeOverlay()"><i class="fas fa-search"></i> Analyze</button>
+                </div>
+            </div>
+            <div id="floatingNextRound"><button class="btn btn-primary" onclick="tournamentManager.nextRound()"><i class="fas fa-forward"></i> Next Round</button></div>
+        </div>
+        <div id="debuggerPanel" class="debugger-panel">
+            <div class="dbg-toolbar">
+                <button class="btn btn-sm btn-icon" id="dbgGoStart" title="Go to start (Home)"><i class="fas fa-fast-backward"></i></button>
+                <button class="btn btn-sm btn-icon" id="dbgBigBack" title="Jump back (Ctrl+←)"><i class="fas fa-backward"></i></button>
+                <button class="btn btn-sm btn-icon" id="dbgStepBack" title="Step back (←)"><i class="fas fa-step-backward"></i></button>
+                <button class="btn btn-sm btn-icon" id="dbgStepFwd" title="Step forward (→)"><i class="fas fa-step-forward"></i></button>
+                <button class="btn btn-sm btn-icon" id="dbgBigFwd" title="Jump forward (Ctrl+→)"><i class="fas fa-forward"></i></button>
+                <button class="btn btn-sm btn-icon" id="dbgGoEnd" title="Go to end (End)"><i class="fas fa-fast-forward"></i></button>
+                <input type="range" id="dbgSlider" min="0" max="0" value="0" class="dbg-slider">
+                <span class="dbg-cycle-label" id="dbgCycleLabel"></span>
+            </div>
+            <div class="dbg-timeline-wrap"><canvas id="dbgTimeline" height="24"></canvas></div>
+            <div class="dbg-body">
+                <div class="dbg-col" id="dbgInstrDisplay"></div>
+                <div class="dbg-col">
+                    <div id="dbgQueuesDisplay"></div>
+                    <div id="dbgCellInspector"></div>
+                </div>
+            </div>
+        </div>
+        <div style="padding:4px 12px;background:var(--bg-panel);border-top:1px solid var(--border);"><div class="score-bar" id="coreOwnership"></div></div>
+    </div>
+
+    <div class="panel" id="panelControl">
+        <div class="panel-header"><span>Battle Control</span></div>
+        <div class="panel-body">
+            <div class="section-label">Warriors</div>
+            <div id="liveWarriorList"></div>
+            <div id="simControls">
+                <div class="sim-controls">
+                    <button class="btn btn-icon" id="stepBtn" title="Step (S)"><i class="fas fa-step-forward"></i></button>
+                    <button class="btn btn-play" id="runBtn" title="Play/Pause (Space)"><i class="fas fa-play" id="playIcon"></i></button>
+                    <button class="btn btn-icon btn-danger" id="resetBtn" title="Reset (R)"><i class="fas fa-stop"></i></button>
+                </div>
+                <div class="setting-row" style="margin-top:6px;"><label>Speed</label><input type="range" id="speedRange" min="1" max="100" value="90" style="width:120px;"></div>
+                <div class="speed-display" id="speedDisplay">~1000 c/f</div>
+                <div class="divider"></div>
+                <div class="section-label">Settings</div>
+                <div class="setting-row"><label>Core Size</label><input type="number" id="coreSizeInp" value="8000" step="100"></div>
+                <div class="setting-row" style="margin-top:4px;"><label>Max Cycles</label><input type="number" id="maxCyclesInp" value="80000" step="1000"></div>
+                <div class="setting-row" style="margin-top:4px;"><label>Max Procs</label><input type="number" id="maxProcsInp" value="8000" step="100"></div>
+            </div>
+            <div id="tournamentUI" style="display:none;">
+                <div class="section-label">Tournament Queue</div>
+                <div id="warriorList"></div>
+                <div class="btn-group" style="margin-top:8px;"><button class="btn btn-primary" id="startTournamentBtn" style="flex:1;"><i class="fas fa-play"></i> Start Tournament</button></div>
+                <div class="divider"></div>
+                <div class="section-label">Match History</div><div id="matchHistory" style="max-height:120px;overflow-y:auto;"></div>
+                <div class="section-label" style="margin-top:8px;">Scoreboard</div><div id="scoreboard"></div>
+            </div>
+            <div class="divider"></div>
+            <div class="section-label">Battle Stats</div>
+            <div class="battle-stats">
+                <div class="stat-box"><div class="val" id="statCycles">0</div><div class="label">Cycles</div></div>
+                <div class="stat-box"><div class="val" id="statWrites">0</div><div class="label">Writes</div></div>
+                <div class="stat-box"><div class="val" id="statSplits">0</div><div class="label">Splits</div></div>
+            </div>
+            <div class="divider"></div>
+            <div class="section-label" style="display:flex;justify-content:space-between;"><span>Log</span><span style="cursor:pointer;font-size:9px;color:var(--text-ghost);" onclick="clearLog()">CLEAR</span></div>
+            <div class="log-scroll" id="logContainer"></div>
+        </div>
+    </div>
+</div>
+
+<nav id="mobileNav">
+    <button class="mnav-btn active" data-panel="panelEditor"><i class="fas fa-code"></i><span>Editor</span></button>
+    <button class="mnav-btn" data-panel="panelCore"><i class="fas fa-microchip"></i><span>Core</span></button>
+    <button class="mnav-btn" data-panel="panelControl"><i class="fas fa-gamepad"></i><span>Control</span></button>
+</nav>
+
+<div id="tooltip"></div>
+
+<div class="modal-backdrop" id="helpModal">
+<div class="modal">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+        <h2>CoreWar Reference</h2>
+        <button class="btn btn-sm" onclick="hideHelp()"><i class="fas fa-times"></i></button>
+    </div>
+    <h3>What is CoreWar?</h3>
+    <p>CoreWar is a programming game where warriors — programs written in Redcode assembly — battle inside a virtual computer's memory (the "core"). Each warrior tries to survive while crashing opponents by forcing them to execute a DAT instruction, which kills the process.</p>
+    <h3>Opcodes (ICWS-94)</h3>
+    <table>
+        <tr><th>Op</th><th>Description</th></tr>
+        <tr><td><code>DAT</code></td><td>Kill process (data)</td></tr>
+        <tr><td><code>MOV</code></td><td>Copy A → B</td></tr>
+        <tr><td><code>ADD</code></td><td>B += A</td></tr>
+        <tr><td><code>SUB</code></td><td>B -= A</td></tr>
+        <tr><td><code>MUL</code></td><td>B *= A</td></tr>
+        <tr><td><code>DIV</code></td><td>B /= A (÷0 kills)</td></tr>
+        <tr><td><code>MOD</code></td><td>B %= A (%0 kills)</td></tr>
+        <tr><td><code>JMP</code></td><td>Jump to A</td></tr>
+        <tr><td><code>JMZ</code></td><td>Jump A if B=0</td></tr>
+        <tr><td><code>JMN</code></td><td>Jump A if B≠0</td></tr>
+        <tr><td><code>DJN</code></td><td>B--, jump A if ≠0</td></tr>
+        <tr><td><code>SPL</code></td><td>Fork at A</td></tr>
+        <tr><td><code>CMP/SEQ</code></td><td>Skip if A=B</td></tr>
+        <tr><td><code>SNE</code></td><td>Skip if A≠B</td></tr>
+        <tr><td><code>SLT</code></td><td>Skip if A&lt;B</td></tr>
+        <tr><td><code>LDP</code></td><td>Load P-Space</td></tr>
+        <tr><td><code>STP</code></td><td>Store P-Space</td></tr>
+        <tr><td><code>NOP</code></td><td>No operation</td></tr>
+    </table>
+    <h3>Addressing Modes</h3>
+    <table>
+        <tr><th>Sym</th><th>Mode</th><th>Description</th></tr>
+        <tr><td><code>#</code></td><td>Immediate</td><td>Value itself</td></tr>
+        <tr><td><code>$</code></td><td>Direct</td><td>Relative address (default)</td></tr>
+        <tr><td><code>@</code></td><td>B-Indirect</td><td>B-field as pointer</td></tr>
+        <tr><td><code>&lt;</code></td><td>B-PreDec</td><td>Decrement B, indirect</td></tr>
+        <tr><td><code>&gt;</code></td><td>B-PostInc</td><td>Indirect, increment B</td></tr>
+        <tr><td><code>*</code></td><td>A-Indirect</td><td>A-field as pointer</td></tr>
+        <tr><td><code>{</code></td><td>A-PreDec</td><td>Decrement A, indirect</td></tr>
+        <tr><td><code>}</code></td><td>A-PostInc</td><td>Indirect, increment A</td></tr>
+    </table>
+    <h3>Strategies</h3>
+    <p><strong>Imp</strong> — Copies itself forward endlessly. Simple but surprisingly effective as a tie-breaker.<br>
+    <strong>Bomber</strong> — Drops DAT bombs at regular intervals to crash anything in its path.<br>
+    <strong>Scanner</strong> — Searches for non-empty cells before attacking. Precise but slower.<br>
+    <strong>Replicator</strong> — Creates copies of itself. Hard to kill since it exists in multiple places.<br>
+    <strong>Vampire</strong> — Plants JMP traps to redirect enemy processes to a "pit".</p>
+    <h3>Keyboard Shortcuts</h3>
+    <table>
+        <tr><td><code>Space</code></td><td>Play / Pause</td></tr>
+        <tr><td><code>S</code></td><td>Step</td></tr>
+        <tr><td><code>R</code></td><td>Reset</td></tr>
+        <tr><td><code>V</code></td><td>Toggle Fast / Fancy mode</td></tr>
+        <tr><td><code>M</code></td><td>Toggle sound on/off</td></tr>
+        <tr><td><code>Ctrl+Enter</code></td><td>Load &amp; Run</td></tr>
+        <tr><td><code>?</code></td><td>Help</td></tr>
+        <tr><td><code>Esc</code></td><td>Close overlay</td></tr>
+    </table>
+</div>
+</div>
+
+<!-- JS modules loaded in dependency order -->
+<script src="js/constants.js"></script>
+<script src="js/warrior-catalog.js"></script>
+<script src="js/warriors.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/editor-highlight.js"></script>
+<script src="js/sound.js"></script>
+<script src="js/visualizer.js"></script>
+<script src="js/tournament.js"></script>
+<script src="js/ui.js"></script>
+<script src="js/debugger.js"></script>
+<script src="js/analytics-collector.js"></script>
+<script src="js/analytics-charts.js"></script>
+<script src="js/analytics-strategy.js"></script>
+<script src="js/analytics-dashboard.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
