@@ -1392,44 +1392,38 @@ describe('NOP with Addressing Mode Side Effects', () => {
 });
 
 // ══════════════════════════════════════════════════════════════════
-// 35. POST-INCREMENT TAINTS SOURCE READ
-//     MOV.I $0, >0 — B post-incs core[pc].bVal DURING operand eval.
-//     Then src = core.get(ptrA) = core.get(pc) reads the MODIFIED cell.
+// 35. IN-REGISTER EVALUATION: source snapshot captured between A and B
+//     MOV.I $0, >0 — B post-incs core[pc].bVal DURING B-operand eval.
+//     In-register: source was captured at A-resolve (before the post-inc),
+//     so the MOV writes back the pre-increment value.
 // ══════════════════════════════════════════════════════════════════
-describe('Post-increment taints source read (core.get returns reference)', () => {
-    test('MOV.I $0, >0: source reads post-incremented bVal from core', () => {
-        // [0] MOV.I $0, >0 with bVal=1
-        // A resolves: $0 → pc. ptrA = pc.
-        // B resolves: >0 → target=pc, r=pc+1, post-inc core[pc].bVal (1→2). ptrB = pc+1.
-        // MOV.I: src = core.get(pc) → now has bVal=2! (post-inc modified core in-place)
-        // dest = core.get(pc+1).clone()
-        // .I copies entire src to dest → dest gets bVal=2 (not original 1!)
+describe('In-register evaluation: source captured before B-operand side effects', () => {
+    test('MOV.I $0, >0: self-mov restores pre-increment source', () => {
+        // A resolves $0 → ptrA=pc. srcA captured = core[pc] with bVal=0.
+        // B resolves >0 → target=pc, r=pc+0, post-inc core[pc].bVal (0→1). ptrB=pc.
+        // MOV.I writes srcA (bVal=0) over core[pc] → net bVal=0 (post-inc undone).
         const { mars, warrior } = setup([
-            I(O.MOV, M.I, AM['$'], 0, AM['>'], 0),    // [0] MOV.I $0, >0 (bVal=0 → target=pc)
-        ]);
-        // With bVal=0: B resolves >0 → target=pc, r=pc+0=pc, post-inc bVal (0→1). ptrB=pc.
-        // src = core[pc] (bVal=1 now). MOV.I copies to core[pc] (self-copy with bVal=1).
-        // dest = core[pc].clone() (bVal=1). .I sets all fields from src. core.set(pc, dest).
-        // Result: core[pc].bVal = 1.
-        step(mars);
-        assertEqual(cell(mars, 0).bVal, 1, 'post-inc visible: bVal went from 0 to 1');
-        // PC = pc + 1 (normal advance after MOV)
-        // But pc+1 is empty DAT → next step dies
-    });
-
-    test('MOV.I $0, >0 leaves a copy with incremented bVal at [pc+bVal]', () => {
-        // With bVal=0: B resolves >0 → target=pc, r=pc+0=pc, post-inc bVal (0→1).
-        // ptrB = pc. src = core[pc] (bVal=1). MOV.I self-copies with bVal=1.
-        // Then PC advances to pc+1. At pc+1 is empty core → DAT → dies.
-        // But we can verify the written instruction has the incremented bVal.
-        const { mars, warrior } = setup([
-            I(O.MOV, M.I, AM['$'], 0, AM['>'], 0),    // [0] MOV.I $0, >0 (bVal=0)
+            I(O.MOV, M.I, AM['$'], 0, AM['>'], 0),
         ]);
         step(mars);
-        // After: core[pc] should be the MOV instruction with bVal=1
-        assertEqual(cell(mars, 0).bVal, 1, 'self-copy captured post-incremented bVal');
+        assertEqual(cell(mars, 0).bVal, 0, 'srcA snapshot predates post-inc; MOV restores bVal=0');
         assertEqual(cell(mars, 0).op, O.MOV, 'still a MOV instruction');
         assertEqual(cell(mars, 0).aVal, 0, 'aVal unchanged');
+    });
+
+    test('MOV.I $1, <1: src captured before B-side pre-decrement modifies source cell', () => {
+        // A resolves $1 → ptrA=pc+1. srcA = core[pc+1].clone() with bVal=2.
+        // B resolves <1 → target=pc+1, pre-dec core[pc+1].bVal (2→1), r=pc+1+1=pc+2. ptrB=pc+2.
+        // MOV.I writes srcA (bVal=2) to core[pc+2].
+        // In-memory (buggy) would read src AFTER pre-dec → bVal=1. In-register → bVal=2.
+        const { mars, warrior } = setup([
+            I(O.MOV, M.I, AM['$'], 1, AM['<'], 1),    // [0]
+            I(O.DAT, M.F, AM['#'], 0, AM['#'], 2),    // [1]
+        ]);
+        step(mars);
+        assertEqual(cell(mars, 1).bVal, 1, 'pre-dec applied to source cell: 2→1');
+        assertEqual(cell(mars, 2).bVal, 2, 'dest has pre-decrement snapshot (in-register semantics)');
+        assertEqual(cell(mars, 2).op, O.DAT, 'dest is the DAT (whole-instruction copy from src)');
     });
 });
 

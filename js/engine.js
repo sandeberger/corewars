@@ -309,17 +309,22 @@ class MARS {
         }
         const pc=warrior.tasks.shift(); const instr=this.core.get(pc).clone();
         if(this.collector) this.collector.recordStep(this.cycle, this.activeWarriorIdx, pc, instr.op, alive.length);
+        // ICWS-94 in-register evaluation: source snapshot captured between
+        // A-operand resolution and B-operand resolution, so B-side predec
+        // can't leak into the source read.
         const ptrA=this.resolveAddress(pc, instr.aMode, instr.aVal);
+        const srcA=(ptrA===null)?instr:this.core.get(ptrA).clone();
         const ptrB=this.resolveAddress(pc, instr.bMode, instr.bVal);
+        const srcB=(ptrB===null)?instr:this.core.get(ptrB).clone();
         let nextPc=this.wrap(pc+1); let taskAlive=true;
         switch(instr.op) {
             case 0: taskAlive=false; soundEngine.emit('d',warrior.id); break;
-            case 1: this.opMOV(instr,ptrA,ptrB,warrior.id); soundEngine.emit('w',warrior.id); break;
-            case 2: this.opMath(instr,ptrA,ptrB,warrior.id,(a,b)=>this.wrap(a+b)); soundEngine.emit('m',warrior.id); break;
-            case 3: this.opMath(instr,ptrA,ptrB,warrior.id,(a,b)=>this.wrap(b-a)); soundEngine.emit('m',warrior.id); break;
-            case 4: this.opMath(instr,ptrA,ptrB,warrior.id,(a,b)=>this.wrap(a*b)); soundEngine.emit('m',warrior.id); break;
-            case 5: taskAlive=this.opDivMod(instr,ptrA,ptrB,warrior.id,false); if(!taskAlive) soundEngine.emit('d',warrior.id); else soundEngine.emit('m',warrior.id); break;
-            case 6: taskAlive=this.opDivMod(instr,ptrA,ptrB,warrior.id,true); if(!taskAlive) soundEngine.emit('d',warrior.id); else soundEngine.emit('m',warrior.id); break;
+            case 1: this.opMOV(instr,srcA,ptrB,warrior.id); soundEngine.emit('w',warrior.id); break;
+            case 2: this.opMath(instr,srcA,ptrB,warrior.id,(a,b)=>this.wrap(a+b)); soundEngine.emit('m',warrior.id); break;
+            case 3: this.opMath(instr,srcA,ptrB,warrior.id,(a,b)=>this.wrap(b-a)); soundEngine.emit('m',warrior.id); break;
+            case 4: this.opMath(instr,srcA,ptrB,warrior.id,(a,b)=>this.wrap(a*b)); soundEngine.emit('m',warrior.id); break;
+            case 5: taskAlive=this.opDivMod(instr,srcA,ptrB,warrior.id,false); if(!taskAlive) soundEngine.emit('d',warrior.id); else soundEngine.emit('m',warrior.id); break;
+            case 6: taskAlive=this.opDivMod(instr,srcA,ptrB,warrior.id,true); if(!taskAlive) soundEngine.emit('d',warrior.id); else soundEngine.emit('m',warrior.id); break;
             case 7: nextPc=ptrA!==null?ptrA:pc; soundEngine.emit('j',warrior.id); break;
             case 8: if(this.checkZero(instr,ptrB)) nextPc=ptrA!==null?ptrA:pc; soundEngine.emit('j',warrior.id); break;
             case 9: if(!this.checkZero(instr,ptrB)) nextPc=ptrA!==null?ptrA:pc; soundEngine.emit('j',warrior.id); break;
@@ -332,11 +337,11 @@ class MARS {
                 taskAlive=false; // already pushed nextPc above
                 break;
             }
-            case 13: if(this.compare(instr,ptrA,ptrB)) nextPc=this.wrap(nextPc+1); soundEngine.emit('j',warrior.id); break;
-            case 14: if(!this.compare(instr,ptrA,ptrB)) nextPc=this.wrap(nextPc+1); soundEngine.emit('j',warrior.id); break;
-            case 12: if(this.checkLT(instr,ptrA,ptrB)) nextPc=this.wrap(nextPc+1); soundEngine.emit('j',warrior.id); break;
-            case 16: this.opSTP(instr,ptrA,ptrB,warrior); break;
-            case 15: this.opLDP(instr,ptrA,ptrB,warrior); break;
+            case 13: if(this.compare(instr,srcA,srcB)) nextPc=this.wrap(nextPc+1); soundEngine.emit('j',warrior.id); break;
+            case 14: if(!this.compare(instr,srcA,srcB)) nextPc=this.wrap(nextPc+1); soundEngine.emit('j',warrior.id); break;
+            case 12: if(this.checkLT(instr,srcA,srcB)) nextPc=this.wrap(nextPc+1); soundEngine.emit('j',warrior.id); break;
+            case 16: this.opSTP(instr,srcA,ptrB,warrior); break;
+            case 15: this.opLDP(instr,srcA,ptrB,warrior); break;
             case 17: break;
         }
         if(taskAlive) warrior.tasks.push(nextPc);
@@ -375,9 +380,8 @@ class MARS {
         return target;
     }
 
-    opMOV(instr, pA, pB, owner) {
+    opMOV(instr, src, pB, owner) {
         if(pB===null) return;
-        const src=pA===null?instr:this.core.get(pA);
         const dest=this.core.get(pB).clone();
         switch(instr.mod) {
             case 0: dest.aVal=src.aVal; break;
@@ -394,9 +398,8 @@ class MARS {
         if(this.collector) this.collector.recordWrite(pB, owner, this.coreSize);
     }
 
-    opMath(instr, pA, pB, owner, fn) {
+    opMath(instr, src, pB, owner, fn) {
         if(pB===null) return;
-        const src=pA===null?instr:this.core.get(pA);
         const dest=this.core.get(pB).clone();
         switch(instr.mod) {
             case 0: dest.aVal=fn(src.aVal,dest.aVal); break;
@@ -410,9 +413,8 @@ class MARS {
         if(this.collector) this.collector.recordWrite(pB, owner, this.coreSize);
     }
 
-    opDivMod(instr, pA, pB, owner, isMod) {
+    opDivMod(instr, src, pB, owner, isMod) {
         if(pB===null) return true;
-        const src=pA===null?instr:this.core.get(pA);
         const dest=this.core.get(pB).clone();
         const fn=isMod?(a,b)=>a===0?null:b%a:(a,b)=>a===0?null:Math.floor(b/a);
         switch(instr.mod) {
@@ -450,9 +452,7 @@ class MARS {
         return false;
     }
 
-    compare(instr, pA, pB) {
-        const a=pA===null?instr:this.core.get(pA);
-        const b=pB===null?instr:this.core.get(pB);
+    compare(instr, a, b) {
         switch(instr.mod) {
             case 0: return a.aVal===b.aVal;
             case 1: return a.bVal===b.bVal;
@@ -465,9 +465,7 @@ class MARS {
         return false;
     }
 
-    checkLT(instr, pA, pB) {
-        const a=pA===null?instr:this.core.get(pA);
-        const b=pB===null?instr:this.core.get(pB);
+    checkLT(instr, a, b) {
         switch(instr.mod) {
             case 0: return a.aVal<b.aVal;
             case 1: return a.bVal<b.bVal;
@@ -479,9 +477,8 @@ class MARS {
         return false;
     }
 
-    opSTP(instr, pA, pB, w) {
+    opSTP(instr, src, pB, w) {
         if(!w.pSpace||pB===null) return;
-        const src=pA===null?instr:this.core.get(pA);
         const dest=this.core.get(pB);
         const ps=w.pSpace, psz=ps.length, wr=(v)=>((v%psz)+psz)%psz;
         switch(instr.mod) {
@@ -494,9 +491,8 @@ class MARS {
         }
     }
 
-    opLDP(instr, pA, pB, w) {
+    opLDP(instr, src, pB, w) {
         if(!w.pSpace||pB===null) return;
-        const src=pA===null?instr:this.core.get(pA);
         const dest=this.core.get(pB).clone();
         const ps=w.pSpace, psz=ps.length, rd=(v)=>ps[((v%psz)+psz)%psz];
         switch(instr.mod) {

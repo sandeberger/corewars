@@ -704,6 +704,74 @@ describe('Two-Warrior Stability — Battles should complete without engine error
     }
 });
 
+// ── 8. ICWS-88 COMPLIANCE — Validate 1.1R ────────────────────────
+// Stefan Strack's validation warrior. Self-ties (loops forever) on a
+// compliant, in-register-evaluation system; suicides otherwise.
+describe('ICWS-88 Compliance — Validate 1.1R self-ties when compliant', () => {
+    test('validate11r.red reaches success label and keeps looping', () => {
+        if (!warriorFiles.includes('validate11r.red')) {
+            throw new Error('validate11r.red not found in test/warriors');
+        }
+        const code = loadWarriorFile('validate11r.red');
+        const parsed = parseWarrior(code);
+
+        // Labels scanned directly from source so we can locate success/fail.
+        const labels = {};
+        let idx = 0;
+        for (const rawLine of code.split('\n')) {
+            let line = rawLine.split(';')[0].replace(/\t/g, ' ').trim();
+            if (!line) continue;
+            while (line.includes(':')) {
+                const ci = line.indexOf(':');
+                const lbl = line.substring(0, ci).trim();
+                if (lbl) labels[lbl] = idx;
+                line = line.substring(ci + 1).trim();
+            }
+            if (!line) continue;
+            const up = line.toUpperCase();
+            if (up.startsWith('ORG ') || up === 'END' || up.startsWith('END ')) continue;
+            if (up.includes(' EQU ') || up.startsWith('PIN ')) continue;
+            let words = line.split(/\s+/);
+            while (words.length > 0) {
+                const w0 = words[0].split('.')[0].toUpperCase();
+                if (OPCODES.hasOwnProperty(w0) || w0 === 'END' || w0 === 'ORG') break;
+                labels[words[0]] = idx;
+                words = words.slice(1);
+            }
+            if (!words.join(' ')) continue;
+            idx++;
+        }
+
+        const mars = createMARS();
+        mars.addWarrior(parsed, 'Validate');
+        const w = mars.warriors[0];
+        const loadAddr = ((w.tasks[0] - parsed.startOffset) % CORE_SIZE + CORE_SIZE) % CORE_SIZE;
+        const successAddr = (loadAddr + labels.success) % CORE_SIZE;
+        const lastAddr = (loadAddr + labels.last) % CORE_SIZE;
+        const failAddr = (loadAddr + labels.fail) % CORE_SIZE;
+
+        let reachedSuccess = false;
+        let reachedLast = false;
+        let hitFail = false;
+        for (let i = 0; i < 20000; i++) {
+            if (w.dead) break;
+            for (const tpc of w.tasks) {
+                if (tpc === successAddr) reachedSuccess = true;
+                if (tpc === lastAddr) reachedLast = true;
+                if (tpc === failAddr) hitFail = true;
+            }
+            if (reachedLast && reachedSuccess) break;
+            mars.step();
+        }
+
+        assert(!hitFail, 'Validator hit fail — engine is not ICWS-88 compliant');
+        assert(reachedSuccess, 'Validator never reached success label');
+        assert(reachedLast, 'Validator never reached last (loop-forever) label');
+        assert(!w.dead, 'Validator died before self-tying');
+        assertGreater(w.tasks.length, 0, 'No live tasks after validator ran');
+    });
+});
+
 // ══════════════════════════════════════════════════════════════════
 // SUMMARY
 // ══════════════════════════════════════════════════════════════════
